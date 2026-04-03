@@ -1,0 +1,73 @@
+name: Build Custom V2ray Rules
+
+on:
+  schedule:
+    - cron: '0 0 * * 1' # Запускать каждую неделю в понедельник
+  workflow_dispatch: # Кнопка для ручного запуска
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          
+      - name: Checkout v2fly/domain-list-community
+        uses: actions/checkout@v4
+        with:
+          repository: v2fly/domain-list-community
+          path: domain-list-community
+          
+      - name: Build custom geosite.dat
+        run: |
+          cd domain-list-community
+          mkdir -p custom-data
+          
+          # Список нужных вам категорий
+          CATEGORIES="vk kinopoisk aviasales drweb wildberries rutube ozon wink 2gis kaspersky ok yandex okko avito mosmetro dzen mailru mailru-group category-travel-ru x5 category-gov-ru category-entertainment-ru category-retail-ru category-medicine-ru category-media-ru category-ecommerce-ru category-ru category-bank-ru"
+          
+          # Копируем только нужные файлы
+          for cat in $CATEGORIES; do
+            if [ -f "data/$cat" ]; then
+              cp "data/$cat" "custom-data/"
+            fi
+          done
+          
+          # Подменяем папку data нашей и собираем
+          rm -rf data
+          mv custom-data data
+          go run main.go --outputdir=../ --datapath=data/
+          # geosite.dat теперь лежит в корне
+          
+      - name: Download raw geoip texts
+        run: |
+          mkdir -p geoip-raw
+          curl -sSL "https://raw.githubusercontent.com/v2fly/geoip/release/text/ru.txt" -o geoip-raw/ru.txt
+          curl -sSL "https://raw.githubusercontent.com/v2fly/geoip/release/text/private.txt" -o geoip-raw/private.txt
+          
+      - name: Build custom geoip.dat
+        run: |
+          # Устанавливаем официальный упаковщик v2dat
+          go install github.com/sxyazi/v2dat/cmd/v2dat@latest
+          
+          # Собираем geoip.dat из текстовых файлов
+          ~/go/bin/v2dat pack geoip -o ./ -n geoip.dat ./geoip-raw/ru.txt ./geoip-raw/private.txt
+          
+      - name: Generate Release Notes
+        run: |
+          echo "Минималистичные сборки V2ray DAT файлов." > release.txt
+          echo "Только нужные геосайты и geoip для максимальной экономии трафика при обновлении баз в клиенте." >> release.txt
+          
+      - name: Publish to Github Releases
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: latest
+          name: Lightweight Custom Rules
+          body_path: release.txt
+          files: |
+            geosite.dat
+            geoip.dat
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
