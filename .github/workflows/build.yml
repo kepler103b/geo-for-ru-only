@@ -25,31 +25,29 @@ jobs:
           cd domain-list-community
           mkdir -p custom-data
           
-          # Список нужных вам категорий
           CATEGORIES="vk kinopoisk aviasales drweb wildberries rutube ozon wink 2gis kaspersky ok yandex okko avito mosmetro dzen mailru mailru-group category-travel-ru x5 category-gov-ru category-entertainment-ru category-retail-ru category-medicine-ru category-media-ru category-ecommerce-ru category-ru category-bank-ru"
           
-          # Функция для захвата файла и всех других файлов, на которые он ссылается (include:)
           copy_with_deps() {
             local file=$1
             if [ -f "data/$file" ] && [ ! -f "custom-data/$file" ]; then
               cp "data/$file" "custom-data/"
-              # Ищем зависимости
               grep -Eo "^include:[a-zA-Z0-9_-]+" "data/$file" | cut -d':' -f2 | while read -r dep; do
                 copy_with_deps "$dep"
               done
             fi
           }
           
-          # Копируем только нужные файлы и их зависимости
           for cat in $CATEGORIES; do
             copy_with_deps "$cat"
           done
           
-          # Подменяем папку data нашей и собираем
           rm -rf data
           mv custom-data data
           go run main.go --outputdir=../ --datapath=data/
-          # geosite.dat теперь лежит в корне
+          cd ..
+          
+          # Переименовываем dlc.dat в geosite.dat, так как компилятор назвал его по-своему
+          if [ -f dlc.dat ]; then mv dlc.dat geosite.dat; fi
           
       - name: Download raw geoip texts
         run: |
@@ -59,25 +57,21 @@ jobs:
           
       - name: Build custom geoip.dat
         run: |
-          # Устанавливаем официальный упаковщик v2dat
           go install github.com/urlesistiana/v2dat@latest
-          
-          # Собираем geoip.dat из текстовых файлов
-          ~/go/bin/v2dat pack geoip -o ./ -n geoip.dat ./geoip-raw/ru.txt ./geoip-raw/private.txt
+          # Собираем geoip.dat
+          ~/go/bin/v2dat pack geoip -o ./ geoip-raw/ru.txt geoip-raw/private.txt
           
       - name: Generate Release Notes
         run: |
           echo "Минималистичные сборки V2ray DAT файлов." > release.txt
-          echo "Только нужные геосайты и geoip для максимальной экономии трафика при обновлении баз в клиенте." >> release.txt
+          echo "Только нужные геосайты и geoip для максимальной экономии трафика при обновлении баз." >> release.txt
           
       - name: Publish to Github Releases
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: latest
-          name: Lightweight Custom Rules
-          body_path: release.txt
-          files: |
-            geosite.dat
-            geoip.dat
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Удаляем старый релиз (если есть), чтобы всегда была свежая ссылка /latest/
+          gh release delete latest --cleanup-tag -y || true
+          
+          # Заливаем файлы в раздел Releases
+          gh release create "latest" geosite.dat geoip.dat -F release.txt -t "Lightweight Custom Rules"
