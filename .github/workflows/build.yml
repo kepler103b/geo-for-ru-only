@@ -2,13 +2,16 @@ name: Build Custom V2ray Rules
 
 on:
   schedule:
-    - cron: '0 0 * * 1' # Запускать каждую неделю в понедельник
-  workflow_dispatch: # Кнопка для ручного запуска
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout root repo
+        uses: actions/checkout@v4
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -46,32 +49,17 @@ jobs:
           go run main.go --outputdir=../ --datapath=data/
           cd ..
           
-          # Переименовываем dlc.dat в geosite.dat, так как компилятор назвал его по-своему
           if [ -f dlc.dat ]; then mv dlc.dat geosite.dat; fi
           
-      - name: Download raw geoip texts
+      - name: Download standard geoip.dat
         run: |
-          mkdir -p geoip-raw
-          curl -sSL "https://raw.githubusercontent.com/v2fly/geoip/release/text/ru.txt" -o geoip-raw/ru.txt
-          curl -sSL "https://raw.githubusercontent.com/v2fly/geoip/release/text/private.txt" -o geoip-raw/private.txt
-          
-      - name: Build custom geoip.dat
-        run: |
-          go install github.com/urlesistiana/v2dat@latest
-          # Собираем geoip.dat
-          ~/go/bin/v2dat pack geoip -o ./ -n geoip.dat geoip-raw/ru.txt geoip-raw/private.txt
-          
-      - name: Generate Release Notes
-        run: |
-          echo "Минималистичные сборки V2ray DAT файлов." > release.txt
-          echo "Только нужные геосайты и geoip для максимальной экономии трафика при обновлении баз." >> release.txt
+          # Просто скачиваем geoip от Loyalsoldier, чтобы прикрепить его к вашему релизу
+          curl -sSL "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" -o geoip.dat
           
       - name: Publish to Github Releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Удаляем старый релиз (если есть), чтобы всегда была свежая ссылка /latest/
+          echo "Минималистичный geosite.dat + стандартный geoip.dat" > release.txt
           gh release delete latest --cleanup-tag -y || true
-          
-          # Заливаем файлы в раздел Releases
           gh release create "latest" geosite.dat geoip.dat -F release.txt -t "Lightweight Custom Rules"
